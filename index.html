@@ -308,9 +308,17 @@
       padding: 12px 14px;
       font-size: 1rem;
       outline: none;
-      margin-bottom: 16px;
+      margin-bottom: 8px;
       color: var(--text);
       background: #fff;
+    }
+
+    .nickname-hint {
+      margin: 0 0 14px;
+      font-size: 0.78rem;
+      line-height: 1.55;
+      color: #7a8f72;
+      text-align: left;
     }
 
     .nickname-input:focus {
@@ -507,6 +515,7 @@
       placeholder="例如：小隊長阿明"
       autocomplete="nickname"
     />
+    <p class="nickname-hint">💡 貼心提醒：本遊戲採用裝置綁定紀錄。若使用同一台裝置改名遊玩，排行榜上的舊紀錄也會同步更新為新名字喔！</p>
     <button class="start-btn" id="startGameBtn" type="button" disabled>開始遊戲</button>
     <p class="loot-status" id="lootStatus" aria-live="polite"></p>
 
