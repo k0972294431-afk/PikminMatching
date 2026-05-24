@@ -511,7 +511,7 @@
     <p class="loot-status" id="lootStatus" aria-live="polite"></p>
 
     <div class="leaderboard-wrap start-leaderboard-wrap">
-      <h3 class="leaderboard-title">🏆TOP 10</h3>
+      <h3 class="leaderboard-title">🏆 世界排行榜 TOP 10</h3>
       <div id="homeLeaderboardContainer">
         <p class="leaderboard-loading">排行榜載入中…</p>
       </div>
@@ -553,7 +553,7 @@
       <p class="result-encourage">真是不容易，但是你成功了！</p>
 
       <div class="leaderboard-wrap">
-        <h3 class="leaderboard-title">🏆TOP 10</h3>
+        <h3 class="leaderboard-title">🏆 世界排行榜 TOP 10</h3>
         <div id="leaderboardContainer">
           <p class="leaderboard-loading">排行榜載入中…</p>
         </div>
@@ -780,13 +780,44 @@
       });
     }
 
-    /** 取得排行榜前 N 名 */
+    /** 取得排行榜原始列表（API 已依 Ascending 排好序） */
     async function fetchLeaderboardTop(count = 10) {
       const data = await lootLockerRequest(
         `/game/leaderboards/${encodeURIComponent(LEADERBOARD_KEY)}/list?count=${count}&after=0`,
         { method: "GET" }
       );
       return Array.isArray(data.items) ? data.items : [];
+    }
+
+    /** 從單筆紀錄取得顯示用暱稱 */
+    function getLeaderboardPlayerName(item) {
+      const raw = item.player?.name ?? item.name ?? "";
+      const name = String(raw).trim();
+      return name || "匿名探險家";
+    }
+
+    /**
+     * 依暱稱去重：同名只保留第一筆（秒數最短／名次最佳），
+     * 後續同名略過，並從清單依序遞補直到湊滿 topN。
+     */
+    function dedupeLeaderboardByNickname(items, topN = 10) {
+      const seen = new Set();
+      const unique = [];
+      for (const item of items) {
+        const name = getLeaderboardPlayerName(item);
+        if (seen.has(name)) continue;
+        seen.add(name);
+        unique.push(item);
+        if (unique.length >= topN) break;
+      }
+      return unique;
+    }
+
+    /** 取得去重後的 TOP N（多抓一些原始資料以因應重複暱稱） */
+    async function fetchLeaderboardTopUnique(uniqueCount = 10) {
+      const poolSize = Math.min(200, Math.max(uniqueCount * 8, 50));
+      const rawItems = await fetchLeaderboardTop(poolSize);
+      return dedupeLeaderboardByNickname(rawItems, uniqueCount);
     }
 
     /** 將 LootLocker metadata 時間戳記格式化為 YYYY-MM-DD */
@@ -807,26 +838,28 @@
     function renderLeaderboardTable(container, items, uploadWarning = "") {
       if (!container) return;
 
+      const displayItems = dedupeLeaderboardByNickname(items, 10);
+
       const warningHtml = uploadWarning
         ? `<p class="leaderboard-warning">⚠️ ${uploadWarning}</p>`
         : "";
 
-      if (!items.length) {
+      if (!displayItems.length) {
         container.innerHTML =
           warningHtml +
           '<p class="leaderboard-loading">尚無排行資料，快來搶第一！</p>';
         return;
       }
 
-      const rows = items
-        .map((item) => {
-          const name = item.player?.name || "匿名探險家";
+      const rows = displayItems
+        .map((item, index) => {
+          const name = getLeaderboardPlayerName(item);
           const scoreText = formatDuration(item.score);
           const dateText = formatLeaderboardDate(item.metadata);
           const safeName = name.replace(/"/g, "&quot;");
           return `
             <tr>
-              <td>${item.rank}</td>
+              <td>${index + 1}</td>
               <td class="col-name" title="${safeName}">${name}</td>
               <td>${scoreText}</td>
               <td>${dateText}</td>
@@ -872,7 +905,7 @@
       renderLeaderboardLoading(homeLeaderboardContainer);
       try {
         await ensureLeaderboardReadSession();
-        const items = await fetchLeaderboardTop(10);
+        const items = await fetchLeaderboardTopUnique(10);
         renderLeaderboardTable(homeLeaderboardContainer, items);
       } catch (error) {
         console.warn("Home leaderboard preview error:", error);
@@ -906,7 +939,7 @@
               : `分數上傳失敗：${msg}`;
         }
 
-        const items = await fetchLeaderboardTop(10);
+        const items = await fetchLeaderboardTopUnique(10);
         renderLeaderboardTable(leaderboardContainer, items, uploadWarning);
       } catch (error) {
         console.warn("LootLocker leaderboard error:", error);
