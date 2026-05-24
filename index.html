@@ -407,6 +407,18 @@
       padding: 8px;
     }
 
+    .leaderboard-warning {
+      text-align: center;
+      font-size: 0.82rem;
+      color: #8a5a12;
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 10px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+
     .overlay-box {
       max-height: 92vh;
       overflow-y: auto;
@@ -547,11 +559,11 @@
      */
 
     // ========== LootLocker 連線設定 ==========
-    // 使用專案 Domain Key 對應的 API 網域（icugyo9j）
     const LOOTLOCKER_API = "https://icugyo9j.api.lootlocker.io";
+    const LOOTLOCKER_DOMAIN_KEY = "icugyo9j";
     const GAME_API_KEY = "dev_f3693ad2ff7a4a9a97b6e32d4ef6f7c9";
     const LEADERBOARD_KEY = "pikmin_matching_leaderboard";
-    const GAME_VERSION = "1.0.0";
+    const GAME_VERSION = "1.0.0.0";
     const STORAGE_NICKNAME = "pikmin_player_nickname";
     const STORAGE_PLAYER_ID = "pikmin_lootlocker_player_identifier";
 
@@ -626,43 +638,74 @@
 
     // ========== LootLocker API 工具 ==========
 
-    /** 通用 fetch 封裝（自動帶入 session token） */
-    async function lootLockerRequest(path, options = {}) {
+    /** 建立 LootLocker 標準 Headers（含 ll-api-key / ll-data-domain） */
+    function buildLootLockerHeaders(extraHeaders = {}, includeSession = true) {
       const headers = {
         "Content-Type": "application/json",
-        ...(options.headers || {})
+        "ll-api-key": GAME_API_KEY,
+        "ll-data-domain": LOOTLOCKER_DOMAIN_KEY,
+        ...extraHeaders
       };
-      if (sessionToken) headers["x-session-token"] = sessionToken;
+      if (includeSession && sessionToken) {
+        headers["x-session-token"] = sessionToken;
+      }
+      return headers;
+    }
 
-      const response = await fetch(`${LOOTLOCKER_API}${path}`, {
-        ...options,
+    /** 從回應中擷取可讀錯誤訊息 */
+    function getLootLockerErrorMessage(data, fallback) {
+      if (!data) return fallback;
+      if (typeof data.message === "string" && data.message) return data.message;
+      if (typeof data.error === "string" && data.error) return data.error;
+      if (data.errorData?.message) return data.errorData.message;
+      return fallback;
+    }
+
+    /** 通用 fetch 封裝 */
+    async function lootLockerRequest(path, options = {}) {
+      const includeSession = options.includeSession !== false;
+      const method = (options.method || "GET").toUpperCase();
+      const headers = buildLootLockerHeaders(options.headers || {}, includeSession);
+
+      const fetchOptions = {
+        method,
         headers
-      });
+      };
 
-      let data = {};
-      try {
-        data = await response.json();
-      } catch {
+      if (options.body !== undefined && method !== "GET" && method !== "HEAD") {
+        fetchOptions.body = options.body;
+      }
+
+      const response = await fetch(`${LOOTLOCKER_API}${path}`, fetchOptions);
+
+      let data = null;
+      const rawText = await response.text();
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = { message: rawText };
+        }
+      } else {
         data = {};
       }
 
       if (!response.ok) {
-        const message = data.message || data.error || `HTTP ${response.status}`;
-        throw new Error(message);
+        throw new Error(getLootLockerErrorMessage(data, `HTTP ${response.status}`));
       }
       if (Object.prototype.hasOwnProperty.call(data, "success") && data.success === false) {
-        const message = data.message || data.error || "LootLocker API 失敗";
-        throw new Error(message);
+        throw new Error(getLootLockerErrorMessage(data, "LootLocker API 失敗"));
       }
       return data;
     }
 
-    /** Guest Session：訪客登入並設定玩家暱稱 */
+    /** Guest Session：訪客登入（Web 平台）並設定玩家暱稱 */
     async function initGuestSession(nickname) {
       const storedIdentifier = localStorage.getItem(STORAGE_PLAYER_ID);
       const body = {
         game_key: GAME_API_KEY,
         game_version: GAME_VERSION,
+        platform: "web",
         optionals: {
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
           player_name: nickname
@@ -672,18 +715,31 @@
 
       const data = await lootLockerRequest("/game/v2/session/guest", {
         method: "POST",
+        includeSession: false,
         body: JSON.stringify(body)
       });
+
+      if (!data.session_token) {
+        throw new Error("Guest Session 未取得 session_token");
+      }
 
       sessionToken = data.session_token;
       localStorage.setItem(STORAGE_PLAYER_ID, data.player_identifier);
       localStorage.setItem(STORAGE_NICKNAME, nickname);
 
-      // 若後台名稱未同步，再 PATCH 一次確保暱稱正確
       if (!data.player_name || data.player_name !== nickname) {
         await setPlayerName(nickname);
       }
       return data;
+    }
+
+    /** 確保已有有效 session（登入失敗時可於通關前重試） */
+    async function ensureLootLockerSession() {
+      if (sessionToken) return;
+      if (!playerNickname) {
+        throw new Error("尚未設定玩家暱稱");
+      }
+      await initGuestSession(playerNickname);
     }
 
     /** 設定 LootLocker Player Name */
@@ -695,13 +751,14 @@
       });
     }
 
-    /** 上傳通關秒數到排行榜（metadata 存入 ISO 時間戳記供日期顯示） */
+    /** 上傳通關秒數（score 必須為整數秒；metadata 為 ISO 時間戳記） */
     async function submitLeaderboardScore(scoreSeconds) {
       const completedAt = new Date().toISOString();
+      const score = Math.max(0, Math.floor(Number(scoreSeconds) || 0));
       await lootLockerRequest(`/game/leaderboards/${LEADERBOARD_KEY}/submit`, {
         method: "POST",
         body: JSON.stringify({
-          score: scoreSeconds,
+          score,
           metadata: completedAt
         })
       });
@@ -710,10 +767,10 @@
     /** 取得排行榜前 N 名 */
     async function fetchLeaderboardTop(count = 10) {
       const data = await lootLockerRequest(
-        `/game/leaderboards/${LEADERBOARD_KEY}/list?count=${count}&after=0`,
+        `/game/leaderboards/${encodeURIComponent(LEADERBOARD_KEY)}/list?count=${count}&after=0`,
         { method: "GET" }
       );
-      return data.items || [];
+      return Array.isArray(data.items) ? data.items : [];
     }
 
     /** 將 LootLocker metadata 時間戳記格式化為 YYYY-MM-DD */
@@ -731,9 +788,15 @@
     }
 
     /** 渲染排行榜表格 */
-    function renderLeaderboardTable(items) {
+    function renderLeaderboardTable(items, uploadWarning = "") {
+      const warningHtml = uploadWarning
+        ? `<p class="leaderboard-warning">⚠️ ${uploadWarning}</p>`
+        : "";
+
       if (!items.length) {
-        leaderboardContainer.innerHTML = '<p class="leaderboard-loading">尚無排行資料，快來搶第一！</p>';
+        leaderboardContainer.innerHTML =
+          warningHtml +
+          '<p class="leaderboard-loading">尚無排行資料，快來搶第一！</p>';
         return;
       }
 
@@ -753,7 +816,7 @@
         })
         .join("");
 
-      leaderboardContainer.innerHTML = `
+      leaderboardContainer.innerHTML = `${warningHtml}
         <table class="leaderboard-table">
           <thead>
             <tr>
@@ -777,17 +840,37 @@
         '<p class="leaderboard-error">排行榜暫時無法載入，請稍後再試。</p>';
     }
 
-    /** 通關後：上傳分數並刷新 TOP 10 */
+    /** 通關後：上傳分數並刷新 TOP 10（上傳失敗仍嘗試顯示排行榜） */
     async function handleLeaderboardAfterWin() {
       renderLeaderboardLoading();
+      let uploadWarning = "";
+
       try {
-        if (sessionReadyPromise) await sessionReadyPromise;
-        await submitLeaderboardScore(elapsedSeconds);
+        if (sessionReadyPromise) {
+          try {
+            await sessionReadyPromise;
+          } catch (loginError) {
+            console.warn("LootLocker login retry:", loginError);
+          }
+        }
+        await ensureLootLockerSession();
+
+        try {
+          await submitLeaderboardScore(elapsedSeconds);
+        } catch (submitError) {
+          console.warn("LootLocker submit error:", submitError);
+          const msg = submitError.message || "分數上傳失敗";
+          uploadWarning =
+            msg.includes("game writes")
+              ? "分數上傳失敗：請到 LootLocker 後台開啟此排行榜的「Enable Game API writes」。"
+              : `分數上傳失敗：${msg}`;
+        }
+
         const items = await fetchLeaderboardTop(10);
-        renderLeaderboardTable(items);
+        renderLeaderboardTable(items, uploadWarning);
       } catch (error) {
         console.warn("LootLocker leaderboard error:", error);
-        renderLeaderboardError();
+        leaderboardContainer.innerHTML = `<p class="leaderboard-error">排行榜暫時無法載入：${error.message || "請稍後再試"}</p>`;
       }
     }
 
@@ -1091,11 +1174,13 @@
 
       sessionReadyPromise = initGuestSession(nickname)
         .then(() => {
-          lootStatusEl.textContent = "";
+          lootStatusEl.textContent = "已連線世界排行榜 ✓";
         })
         .catch((error) => {
+          sessionToken = null;
           console.warn("LootLocker guest login failed:", error);
-          lootStatusEl.textContent = "連線失敗，仍可遊玩，但分數可能無法上傳。";
+          lootStatusEl.textContent = `連線失敗：${error.message || "請稍後再試"}（仍可遊玩）`;
+          throw error;
         })
         .finally(() => {
           startGameBtn.disabled = false;
