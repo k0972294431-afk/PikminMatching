@@ -280,7 +280,7 @@
 
     /* ========== 首頁：暱稱輸入 ========== */
     .start-screen {
-      width: min(480px, 92vw);
+      width: min(560px, 94vw);
       margin: 48px auto;
       background: var(--panel);
       border: 2px solid rgba(255, 255, 255, 0.7);
@@ -349,6 +349,12 @@
       font-size: 0.82rem;
       color: #5a7a45;
       min-height: 1.2em;
+    }
+
+    .start-leaderboard-wrap {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px dashed #c5e1a5;
     }
 
     /* ========== 世界排行榜表格 ========== */
@@ -503,6 +509,13 @@
     />
     <button class="start-btn" id="startGameBtn" type="button" disabled>開始遊戲</button>
     <p class="loot-status" id="lootStatus" aria-live="polite"></p>
+
+    <div class="leaderboard-wrap start-leaderboard-wrap">
+      <h3 class="leaderboard-title">🏆TOP 10</h3>
+      <div id="homeLeaderboardContainer">
+        <p class="leaderboard-loading">排行榜載入中…</p>
+      </div>
+    </div>
   </section>
 
   <main class="app hidden" id="gameScreen">
@@ -540,7 +553,7 @@
       <p class="result-encourage">真是不容易，但是你成功了！</p>
 
       <div class="leaderboard-wrap">
-        <h3 class="leaderboard-title">🏆 世界排行榜 TOP 10</h3>
+        <h3 class="leaderboard-title">🏆TOP 10</h3>
         <div id="leaderboardContainer">
           <p class="leaderboard-loading">排行榜載入中…</p>
         </div>
@@ -619,6 +632,7 @@
     const finalTimeEl = document.getElementById("finalTime");
     const finalMatchCountEl = document.getElementById("finalMatchCount");
     const fireworksCanvas = document.getElementById("fireworksCanvas");
+    const homeLeaderboardContainer = document.getElementById("homeLeaderboardContainer");
     const leaderboardContainer = document.getElementById("leaderboardContainer");
 
     let deck = [];
@@ -707,10 +721,10 @@
         game_version: GAME_VERSION,
         platform: "web",
         optionals: {
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-          player_name: nickname
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
         }
       };
+      if (nickname) body.optionals.player_name = nickname;
       if (storedIdentifier) body.player_identifier = storedIdentifier;
 
       const data = await lootLockerRequest("/game/v2/session/guest", {
@@ -725,10 +739,12 @@
 
       sessionToken = data.session_token;
       localStorage.setItem(STORAGE_PLAYER_ID, data.player_identifier);
-      localStorage.setItem(STORAGE_NICKNAME, nickname);
 
-      if (!data.player_name || data.player_name !== nickname) {
-        await setPlayerName(nickname);
+      if (nickname) {
+        localStorage.setItem(STORAGE_NICKNAME, nickname);
+        if (!data.player_name || data.player_name !== nickname) {
+          await setPlayerName(nickname);
+        }
       }
       return data;
     }
@@ -787,14 +803,16 @@
       return `${y}-${m}-${d}`;
     }
 
-    /** 渲染排行榜表格 */
-    function renderLeaderboardTable(items, uploadWarning = "") {
+    /** 渲染排行榜到指定容器（首頁預覽 / 結算畫面共用） */
+    function renderLeaderboardTable(container, items, uploadWarning = "") {
+      if (!container) return;
+
       const warningHtml = uploadWarning
         ? `<p class="leaderboard-warning">⚠️ ${uploadWarning}</p>`
         : "";
 
       if (!items.length) {
-        leaderboardContainer.innerHTML =
+        container.innerHTML =
           warningHtml +
           '<p class="leaderboard-loading">尚無排行資料，快來搶第一！</p>';
         return;
@@ -805,10 +823,11 @@
           const name = item.player?.name || "匿名探險家";
           const scoreText = formatDuration(item.score);
           const dateText = formatLeaderboardDate(item.metadata);
+          const safeName = name.replace(/"/g, "&quot;");
           return `
             <tr>
               <td>${item.rank}</td>
-              <td class="col-name" title="${name}">${name}</td>
+              <td class="col-name" title="${safeName}">${name}</td>
               <td>${scoreText}</td>
               <td>${dateText}</td>
             </tr>
@@ -816,7 +835,7 @@
         })
         .join("");
 
-      leaderboardContainer.innerHTML = `${warningHtml}
+      container.innerHTML = `${warningHtml}
         <table class="leaderboard-table">
           <thead>
             <tr>
@@ -831,18 +850,39 @@
       `;
     }
 
-    function renderLeaderboardLoading() {
-      leaderboardContainer.innerHTML = '<p class="leaderboard-loading">排行榜載入中…</p>';
+    function renderLeaderboardLoading(container) {
+      if (!container) return;
+      container.innerHTML = '<p class="leaderboard-loading">排行榜載入中…</p>';
     }
 
-    function renderLeaderboardError() {
-      leaderboardContainer.innerHTML =
-        '<p class="leaderboard-error">排行榜暫時無法載入，請稍後再試。</p>';
+    function renderLeaderboardError(container, message) {
+      if (!container) return;
+      container.innerHTML = `<p class="leaderboard-error">${message || "排行榜暫時無法載入"}</p>`;
+    }
+
+    /** 確保可讀取排行榜的 Guest Session（首頁預覽用，暱稱可選） */
+    async function ensureLeaderboardReadSession() {
+      if (sessionToken) return;
+      const savedNickname = localStorage.getItem(STORAGE_NICKNAME);
+      await initGuestSession(savedNickname || null);
+    }
+
+    /** 首頁載入時：預先抓取並顯示 TOP 10 */
+    async function loadHomeLeaderboardPreview() {
+      renderLeaderboardLoading(homeLeaderboardContainer);
+      try {
+        await ensureLeaderboardReadSession();
+        const items = await fetchLeaderboardTop(10);
+        renderLeaderboardTable(homeLeaderboardContainer, items);
+      } catch (error) {
+        console.warn("Home leaderboard preview error:", error);
+        renderLeaderboardError(homeLeaderboardContainer, "排行榜暫時無法載入");
+      }
     }
 
     /** 通關後：上傳分數並刷新 TOP 10（上傳失敗仍嘗試顯示排行榜） */
     async function handleLeaderboardAfterWin() {
-      renderLeaderboardLoading();
+      renderLeaderboardLoading(leaderboardContainer);
       let uploadWarning = "";
 
       try {
@@ -867,10 +907,13 @@
         }
 
         const items = await fetchLeaderboardTop(10);
-        renderLeaderboardTable(items, uploadWarning);
+        renderLeaderboardTable(leaderboardContainer, items, uploadWarning);
       } catch (error) {
         console.warn("LootLocker leaderboard error:", error);
-        leaderboardContainer.innerHTML = `<p class="leaderboard-error">排行榜暫時無法載入：${error.message || "請稍後再試"}</p>`;
+        renderLeaderboardError(
+          leaderboardContainer,
+          `排行榜暫時無法載入：${error.message || "請稍後再試"}`
+        );
       }
     }
 
@@ -1204,15 +1247,23 @@
       if (event.key === "Enter" && !startGameBtn.disabled) onClickStartGame();
     });
 
-    // 初次載入：預載圖片 + 還原上次暱稱
-    const savedNickname = localStorage.getItem(STORAGE_NICKNAME);
-    if (savedNickname) {
-      nicknameInput.value = savedNickname;
+    // 初次載入：預載圖片、還原暱稱、首頁預覽排行榜
+    function initApp() {
+      const savedNickname = localStorage.getItem(STORAGE_NICKNAME);
+      if (savedNickname) {
+        nicknameInput.value = savedNickname;
+      }
+      updateStartButtonState();
+      updateSoundToggleUI();
+      preloadImages(preloadList);
+      loadHomeLeaderboardPreview();
     }
-    updateStartButtonState();
-    updateSoundToggleUI();
 
-    preloadImages(preloadList);
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initApp);
+    } else {
+      initApp();
+    }
   </script>
 </body>
 </html>
