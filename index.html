@@ -274,6 +274,144 @@
       pointer-events: none;
     }
 
+    .hidden {
+      display: none !important;
+    }
+
+    /* ========== 首頁：暱稱輸入 ========== */
+    .start-screen {
+      width: min(480px, 92vw);
+      margin: 48px auto;
+      background: var(--panel);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      border-radius: 22px;
+      box-shadow: 0 12px 32px var(--shadow);
+      padding: 28px 24px;
+      text-align: center;
+    }
+
+    .start-screen .title {
+      margin-bottom: 18px;
+    }
+
+    .nickname-label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: left;
+    }
+
+    .nickname-input {
+      width: 100%;
+      border: 2px solid #b9d89f;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 1rem;
+      outline: none;
+      margin-bottom: 16px;
+      color: var(--text);
+      background: #fff;
+    }
+
+    .nickname-input:focus {
+      border-color: #6fbf3a;
+      box-shadow: 0 0 0 3px rgba(111, 191, 58, 0.25);
+    }
+
+    .start-btn {
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: #fff;
+      background: linear-gradient(180deg, #90d874, #5cad44);
+      box-shadow: 0 4px 0 #3e7f2f;
+      cursor: pointer;
+      transition: transform 0.14s ease, filter 0.14s ease, opacity 0.14s ease;
+    }
+
+    .start-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      filter: brightness(1.04);
+    }
+
+    .start-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      box-shadow: none;
+      background: linear-gradient(180deg, #b5c9a8, #95ad88);
+    }
+
+    .loot-status {
+      margin-top: 10px;
+      font-size: 0.82rem;
+      color: #5a7a45;
+      min-height: 1.2em;
+    }
+
+    /* ========== 世界排行榜表格 ========== */
+    .leaderboard-wrap {
+      margin: 14px 0 18px;
+      text-align: left;
+    }
+
+    .leaderboard-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: #3a6f2d;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .leaderboard-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      background: rgba(255, 255, 255, 0.75);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .leaderboard-table th,
+    .leaderboard-table td {
+      padding: 8px 6px;
+      border-bottom: 1px solid #dcefd0;
+      text-align: center;
+    }
+
+    .leaderboard-table th {
+      background: #e8f5e0;
+      color: #355928;
+      font-weight: 800;
+    }
+
+    .leaderboard-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .leaderboard-table .col-name {
+      text-align: left;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .leaderboard-loading,
+    .leaderboard-error {
+      text-align: center;
+      font-size: 0.85rem;
+      color: #5a7a45;
+      padding: 8px;
+    }
+
+    .overlay-box {
+      max-height: 92vh;
+      overflow-y: auto;
+    }
+
     @media (max-width: 600px) {
       .app {
         width: min(100%, 96vw);
@@ -310,6 +448,20 @@
       .restart {
         width: 88%;
       }
+
+      .start-screen {
+        margin: 20px auto;
+        padding: 22px 16px;
+      }
+
+      .leaderboard-table {
+        font-size: 0.72rem;
+      }
+
+      .leaderboard-table th,
+      .leaderboard-table td {
+        padding: 6px 4px;
+      }
     }
 
     @keyframes pop {
@@ -325,7 +477,23 @@
   </style>
 </head>
 <body>
-  <main class="app">
+  <!-- 首頁：暱稱輸入與開始遊戲 -->
+  <section class="start-screen" id="startScreen">
+    <h1 class="title">🌿 皮克敏對對碰</h1>
+    <label class="nickname-label" for="nicknameInput">請輸入暱稱</label>
+    <input
+      class="nickname-input"
+      id="nicknameInput"
+      type="text"
+      maxlength="20"
+      placeholder="例如：小隊長阿明"
+      autocomplete="nickname"
+    />
+    <button class="start-btn" id="startGameBtn" type="button" disabled>開始遊戲</button>
+    <p class="loot-status" id="lootStatus" aria-live="polite"></p>
+  </section>
+
+  <main class="app hidden" id="gameScreen">
     <section class="top-panel">
       <h1 class="title">🌿 皮克敏對對碰</h1>
       <div class="stats">
@@ -358,18 +526,33 @@
         <div id="finalMatchCount">配對次數：0</div>
       </div>
       <p class="result-encourage">真是不容易，但是你成功了！</p>
-      <button class="restart" id="overlayRestartBtn" type="button">重新開始</button>
+
+      <div class="leaderboard-wrap">
+        <h3 class="leaderboard-title">🏆 世界排行榜 TOP 10</h3>
+        <div id="leaderboardContainer">
+          <p class="leaderboard-loading">排行榜載入中…</p>
+        </div>
+      </div>
+
+      <button class="restart" id="overlayRestartBtn" type="button">再玩一局</button>
     </div>
   </section>
 
   <script>
     /*
-     * 皮克敏對對碰（純輕鬆收集模式）
+     * 皮克敏對對碰（輕鬆收集模式 + LootLocker 世界排行榜）
      * - 4x4 網格，共 16 張卡（8 對）
-     * - 皆使用 images/ 資料夾中的圖片
-     * - 配對成功後卡片保持翻開
-     * - 完成 8 對後顯示全螢幕慶祝視窗
+     * - 首頁輸入暱稱後 Guest Login，通關自動上傳秒數
+     * - 結算畫面顯示 TOP 10 排行榜
      */
+
+    // ========== LootLocker 連線設定 ==========
+    const LOOTLOCKER_API = "https://api.lootlocker.com";
+    const GAME_API_KEY = "dev_f3693ad2ff7a4a9a97b6e32d4ef6f7c9";
+    const LEADERBOARD_KEY = "pikmin_matching_leaderboard";
+    const GAME_VERSION = "1.0.0";
+    const STORAGE_NICKNAME = "pikmin_player_nickname";
+    const STORAGE_PLAYER_ID = "pikmin_lootlocker_player_identifier";
 
     // 8 種皮克敏圖片設定（依指定檔名）
     const PIKMIN = [
@@ -408,6 +591,11 @@
       );
     }
 
+    const startScreen = document.getElementById("startScreen");
+    const gameScreen = document.getElementById("gameScreen");
+    const nicknameInput = document.getElementById("nicknameInput");
+    const startGameBtn = document.getElementById("startGameBtn");
+    const lootStatusEl = document.getElementById("lootStatus");
     const boardEl = document.getElementById("board");
     const matchCountEl = document.getElementById("matchCount");
     const timerTextEl = document.getElementById("timerText");
@@ -418,6 +606,7 @@
     const finalTimeEl = document.getElementById("finalTime");
     const finalMatchCountEl = document.getElementById("finalMatchCount");
     const fireworksCanvas = document.getElementById("fireworksCanvas");
+    const leaderboardContainer = document.getElementById("leaderboardContainer");
 
     let deck = [];
     let opened = [];
@@ -430,6 +619,176 @@
     let audioCtx = null;
     let fireworksRafId = null;
     let fireworksParticles = [];
+    let playerNickname = "";
+    let sessionToken = null;
+    let sessionReadyPromise = null;
+
+    // ========== LootLocker API 工具 ==========
+
+    /** 通用 fetch 封裝（自動帶入 session token） */
+    async function lootLockerRequest(path, options = {}) {
+      const headers = {
+        "Content-Type": "application/json",
+        ...(options.headers || {})
+      };
+      if (sessionToken) headers["x-session-token"] = sessionToken;
+
+      const response = await fetch(`${LOOTLOCKER_API}${path}`, {
+        ...options,
+        headers
+      });
+
+      let data = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
+      }
+
+      if (!response.ok) {
+        const message = data.message || data.error || `HTTP ${response.status}`;
+        throw new Error(message);
+      }
+      if (Object.prototype.hasOwnProperty.call(data, "success") && data.success === false) {
+        const message = data.message || data.error || "LootLocker API 失敗";
+        throw new Error(message);
+      }
+      return data;
+    }
+
+    /** Guest Session：訪客登入並設定玩家暱稱 */
+    async function initGuestSession(nickname) {
+      const storedIdentifier = localStorage.getItem(STORAGE_PLAYER_ID);
+      const body = {
+        game_key: GAME_API_KEY,
+        game_version: GAME_VERSION,
+        optionals: {
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          player_name: nickname
+        }
+      };
+      if (storedIdentifier) body.player_identifier = storedIdentifier;
+
+      const data = await lootLockerRequest("/game/v2/session/guest", {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+
+      sessionToken = data.session_token;
+      localStorage.setItem(STORAGE_PLAYER_ID, data.player_identifier);
+      localStorage.setItem(STORAGE_NICKNAME, nickname);
+
+      // 若後台名稱未同步，再 PATCH 一次確保暱稱正確
+      if (!data.player_name || data.player_name !== nickname) {
+        await setPlayerName(nickname);
+      }
+      return data;
+    }
+
+    /** 設定 LootLocker Player Name */
+    async function setPlayerName(name) {
+      await lootLockerRequest("/game/player/name", {
+        method: "PATCH",
+        headers: { "LL-Version": "2021-03-01" },
+        body: JSON.stringify({ name })
+      });
+    }
+
+    /** 上傳通關秒數到排行榜（metadata 存入 ISO 時間戳記供日期顯示） */
+    async function submitLeaderboardScore(scoreSeconds) {
+      const completedAt = new Date().toISOString();
+      await lootLockerRequest(`/game/leaderboards/${LEADERBOARD_KEY}/submit`, {
+        method: "POST",
+        body: JSON.stringify({
+          score: scoreSeconds,
+          metadata: completedAt
+        })
+      });
+    }
+
+    /** 取得排行榜前 N 名 */
+    async function fetchLeaderboardTop(count = 10) {
+      const data = await lootLockerRequest(
+        `/game/leaderboards/${LEADERBOARD_KEY}/list?count=${count}&after=0`,
+        { method: "GET" }
+      );
+      return data.items || [];
+    }
+
+    /** 將 LootLocker metadata 時間戳記格式化為 YYYY-MM-DD */
+    function formatLeaderboardDate(metadata) {
+      if (!metadata) return "—";
+      const parsed = new Date(metadata);
+      if (Number.isNaN(parsed.getTime())) {
+        const match = String(metadata).match(/(\d{4}-\d{2}-\d{2})/);
+        return match ? match[1] : "—";
+      }
+      const y = parsed.getFullYear();
+      const m = String(parsed.getMonth() + 1).padStart(2, "0");
+      const d = String(parsed.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    /** 渲染排行榜表格 */
+    function renderLeaderboardTable(items) {
+      if (!items.length) {
+        leaderboardContainer.innerHTML = '<p class="leaderboard-loading">尚無排行資料，快來搶第一！</p>';
+        return;
+      }
+
+      const rows = items
+        .map((item) => {
+          const name = item.player?.name || "匿名探險家";
+          const scoreText = formatDuration(item.score);
+          const dateText = formatLeaderboardDate(item.metadata);
+          return `
+            <tr>
+              <td>${item.rank}</td>
+              <td class="col-name" title="${name}">${name}</td>
+              <td>${scoreText}</td>
+              <td>${dateText}</td>
+            </tr>
+          `;
+        })
+        .join("");
+
+      leaderboardContainer.innerHTML = `
+        <table class="leaderboard-table">
+          <thead>
+            <tr>
+              <th>排名</th>
+              <th>玩家暱稱</th>
+              <th>通關秒數</th>
+              <th>完成日期</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
+
+    function renderLeaderboardLoading() {
+      leaderboardContainer.innerHTML = '<p class="leaderboard-loading">排行榜載入中…</p>';
+    }
+
+    function renderLeaderboardError() {
+      leaderboardContainer.innerHTML =
+        '<p class="leaderboard-error">排行榜暫時無法載入，請稍後再試。</p>';
+    }
+
+    /** 通關後：上傳分數並刷新 TOP 10 */
+    async function handleLeaderboardAfterWin() {
+      renderLeaderboardLoading();
+      try {
+        if (sessionReadyPromise) await sessionReadyPromise;
+        await submitLeaderboardScore(elapsedSeconds);
+        const items = await fetchLeaderboardTop(10);
+        renderLeaderboardTable(items);
+      } catch (error) {
+        console.warn("LootLocker leaderboard error:", error);
+        renderLeaderboardError();
+      }
+    }
 
     // 輕量音效：使用 Web Audio API 產生翻牌、成功與通關提示音
     function ensureAudioContext() {
@@ -639,6 +998,7 @@
       overlay.classList.add("show");
       startFireworks();
       playWinSound();
+      handleLeaderboardAfterWin();
     }
 
     function hideOverlay() {
@@ -695,7 +1055,7 @@
       }, 700);
     }
 
-    // 重開一局
+    // 重開一局（保留 LootLocker session，不重登）
     function startGame() {
       hideOverlay();
       deck = createDeck();
@@ -708,6 +1068,42 @@
       startTimer();
     }
 
+    function updateStartButtonState() {
+      const hasName = nicknameInput.value.trim().length > 0;
+      startGameBtn.disabled = !hasName;
+    }
+
+    function showGameScreen() {
+      startScreen.classList.add("hidden");
+      gameScreen.classList.remove("hidden");
+    }
+
+  /** 點擊【開始遊戲】：記住暱稱、Guest Login、進入棋盤 */
+    function onClickStartGame() {
+      const nickname = nicknameInput.value.trim();
+      if (!nickname) return;
+
+      playerNickname = nickname;
+      localStorage.setItem(STORAGE_NICKNAME, nickname);
+      startGameBtn.disabled = true;
+      lootStatusEl.textContent = "正在連線世界排行榜…";
+
+      sessionReadyPromise = initGuestSession(nickname)
+        .then(() => {
+          lootStatusEl.textContent = "";
+        })
+        .catch((error) => {
+          console.warn("LootLocker guest login failed:", error);
+          lootStatusEl.textContent = "連線失敗，仍可遊玩，但分數可能無法上傳。";
+        })
+        .finally(() => {
+          startGameBtn.disabled = false;
+        });
+
+      showGameScreen();
+      startGame();
+    }
+
     restartBtn.addEventListener("click", startGame);
     overlayRestartBtn.addEventListener("click", startGame);
     soundToggleBtn.addEventListener("click", () => {
@@ -716,11 +1112,21 @@
       updateSoundToggleUI();
     });
 
-    // 初次載入：先預載，後開局
-    preloadImages(preloadList).finally(() => {
-      updateSoundToggleUI();
-      startGame();
+    nicknameInput.addEventListener("input", updateStartButtonState);
+    startGameBtn.addEventListener("click", onClickStartGame);
+    nicknameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !startGameBtn.disabled) onClickStartGame();
     });
+
+    // 初次載入：預載圖片 + 還原上次暱稱
+    const savedNickname = localStorage.getItem(STORAGE_NICKNAME);
+    if (savedNickname) {
+      nicknameInput.value = savedNickname;
+    }
+    updateStartButtonState();
+    updateSoundToggleUI();
+
+    preloadImages(preloadList);
   </script>
 </body>
 </html>
